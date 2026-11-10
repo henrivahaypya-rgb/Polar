@@ -12,7 +12,7 @@ python -m venv .venv
 .venv/bin/python -m streamlit run app.py --server.address 127.0.0.1
 ```
 
-Upload the regular exercise CSV, then the matching `_RR.CSV`. The exercise export has summary headers and a separate sample header; RR exports have `duration` (milliseconds) and `offline` columns. Comma, semicolon and tab separators are supported. Files are parsed locally by the running Python app, with no AccessLink requests.
+Upload an `_RR.CSV` alone for RR analysis, a regular exercise CSV alone for exercise analysis, or both matching files. Exercise metadata, session duration comparisons and Edwards load are available only when an exercise CSV is supplied. The exercise export has summary headers and a separate sample header; RR exports have `duration` (milliseconds) and `offline` columns. Comma, semicolon and tab separators are supported. Files are parsed locally by the running Python app, with no AccessLink requests.
 
 ## Interpretation
 
@@ -32,7 +32,7 @@ This first version supports one exercise at a time. Daily activity, multi-sessio
 
 ## Optional RR artifact correction
 
-After uploading both files, enable **Apply RR artifact correction**. The app uses NeuroKit2 0.2.12 `signal_fixpeaks(method="Kubios", iterative=False)` for one auditable pass of the published Lipponen–Tarvainen algorithm. This is an independent open-source implementation, not a connection to commercial Kubios software or a guarantee of identical results.
+After uploading an RR file (with or without an exercise file), enable **Apply RR artifact correction**. The app uses NeuroKit2 0.2.12 `signal_fixpeaks(method="Kubios", iterative=False)` for one auditable pass of the published Lipponen–Tarvainen algorithm. This is an independent open-source implementation, not a connection to commercial Kubios software or a guarantee of identical results.
 
 The input is a zero-time boundary followed by cumulative RR durations in milliseconds, interpreted as inferred peak positions at a nominal 1,000 Hz time resolution. There is no ECG waveform or verified beat detection. The algorithm classifies ectopic, missed, extra and long/short events and can reposition, insert or delete inferred peaks. Original intervals remain unchanged. Corrected intervals retain their reconstructed elapsed times; recording boundaries must remain unchanged or the correction is rejected. Short recordings (under 30 intervals) and offline-flagged recordings are rejected rather than silently interpolated.
 
@@ -57,3 +57,5 @@ The RR view calculates DFA α1 for **200 consecutive RR intervals with a 100-int
 The estimator is NeuroKit2 `fractal_dfa`, with **all integer scales 4–16 inclusive**, a demeaned cumulative profile, first-order (linear) detrending, and 50% overlapping internal segments (`overlap=True`). The slope of log fluctuation versus log scale is α1. Internal DFA segmentation is separate from the 100-interval step of the outer windows. No resampling to uniform time is performed.
 
 Raw and corrected series have separate charts, tables and CSV downloads. Windows are indexed independently when correction adds/removes intervals; compare by elapsed time, not row number. Any residual heuristic flags, more than 5% corrected intervals, constant data or an undefined fit withhold the estimate. Flagged intervals are not deleted or concatenated across gaps. Fit R² describes linear scaling fit only; it is not a validated quality score. Genuine exercise transitions and correction can affect α1. This app does not derive aerobic/anaerobic thresholds or recovery scores from it.
+
+The DFA view also includes a scatter plot with **mean heart rate (bpm) on the x-axis** and **DFA α1 on the y-axis**, for both raw and optionally corrected series. Each point uses the same 200 RR intervals for its HR and DFA estimate; HR is `60000 / mean(RR_ms)`. Withheld estimates are excluded. Overlapping points are not independent and are not connected in HR order or used to fit physiological thresholds. If no estimate passes screening, an explanatory message replaces the scatter plot.
