@@ -118,6 +118,53 @@ def rr_windows(beats, window_s=300):
     return result
 
 
+def dfa_windows(beats):
+    """DFA alpha1, scales 4–16, in complete 200-interval windows stepped by 100.
+
+    Never remove intervals to manufacture a contiguous window. Raw or residual
+    flags withhold the estimate; corrected output burden must be <= 5%.
+    """
+    import numpy as np
+    import neurokit2 as nk
+
+    rows = []
+    for start in range(0, len(beats) - 199, 100):
+        group = beats[start:start + 200]
+        values = np.asarray([b['rr_ms'] for b in group], dtype=float)
+        start_s = group[0]['elapsed_s'] - group[0]['rr_ms'] / 1000
+        end_s = group[-1]['elapsed_s']
+        flagged = sum(b['flagged'] for b in group)
+        corrected = sum(b.get('corrected', False) for b in group)
+        row = {'start_interval': start + 1, 'end_interval': start + 200,
+               'start_s': start_s, 'end_s': end_s, 'midpoint_min': (start_s + end_s) / 120,
+               'interval_count': 200, 'flagged_pct': flagged / 2,
+               'corrected_pct': corrected / 2, 'mean_hr_bpm': 60000 / float(np.mean(values)),
+               'alpha1': None, 'fit_r2': None, 'status': 'ok'}
+        if flagged:
+            row['status'] = 'withheld: flagged intervals'
+        elif corrected > 10:
+            row['status'] = 'withheld: more than 5% corrected'
+        elif not np.isfinite(values).all() or np.any(values <= 0):
+            row['status'] = 'withheld: invalid intervals'
+        elif np.ptp(values) < 1e-9:
+            row['status'] = 'withheld: constant RR'
+        else:
+            alpha, info = nk.fractal_dfa(values, scale=list(range(4, 17)),
+                                         overlap=True, integrate=True, order=1,
+                                         multifractal=False, show=False)
+            fluctuations = np.asarray(info['Fluctuations']).reshape(-1)
+            if np.isfinite(alpha) and np.isfinite(fluctuations).all() and np.all(fluctuations > 0):
+                row['alpha1'] = float(alpha)
+                log_scale, log_f = np.log(info['scale']), np.log(fluctuations)
+                residual = log_f - np.polyval(np.polyfit(log_scale, log_f, 1), log_scale)
+                total = float(np.sum((log_f - log_f.mean()) ** 2))
+                row['fit_r2'] = 1 - float(np.sum(residual ** 2)) / total if total > 0 else None
+            else:
+                row['status'] = 'withheld: undefined scaling fit'
+        rows.append(row)
+    return rows
+
+
 def correct_rr(beats):
     """One pass of NeuroKit's Lipponen–Tarvainen method on inferred beat times.
 

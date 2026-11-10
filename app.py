@@ -1,12 +1,30 @@
 import pandas as pd
 import streamlit as st
 
-from analysis import parse_exercise, parse_rr, rr_windows, training_metrics, number, correct_rr
+from analysis import parse_exercise, parse_rr, rr_windows, training_metrics, number, correct_rr, dfa_windows
 
 
 @st.cache_data(show_spinner='Correcting RR artifacts…', max_entries=4)
 def cached_correction(beats):
     return correct_rr(beats)
+
+
+@st.cache_data(show_spinner='Calculating DFA α1…', max_entries=4)
+def cached_dfa(beats):
+    return dfa_windows(beats)
+
+
+def show_dfa(beats, label):
+    st.subheader(f'DFA α1 — {label}')
+    rows = cached_dfa(beats)
+    if not rows:
+        st.info('DFA requires at least 200 RR intervals. Incomplete final windows are omitted.')
+        return
+    results = pd.DataFrame(rows)
+    st.caption('Scales: every integer from 4 to 16 beats. Windows: 200 intervals, advanced by 100 (50% overlap), plotted at their time midpoint. DFA uses a demeaned cumulative profile, linear detrending and 50% overlapping internal segments. Any remaining flagged intervals, or more than 5% corrected intervals, withhold α1; intervals are never removed to join gaps. Fit R² describes the log–log scaling fit, not physiological validity.')
+    st.line_chart(results.set_index('midpoint_min')[['alpha1']])
+    st.dataframe(results, hide_index=True)
+    st.download_button(f'Download {label} DFA α1', results.to_csv(index=False), f'dfa_alpha1_{label}.csv', 'text/csv')
 
 st.set_page_config(page_title='Polar training analysis', layout='wide')
 st.title('Polar training analysis')
@@ -66,6 +84,8 @@ try:
         st.download_button('Download RR window metrics', windows.to_csv(index=False), 'rr_windows.csv', 'text/csv')
         with st.expander('Flagged intervals'):
             st.dataframe(frame[frame['flagged']], hide_index=True)
+        st.caption('DFA α1 describes short-term RR correlations. Artifact correction, breathing and exercise transitions affect it; this app does not infer training thresholds from α1.')
+        show_dfa(beats, 'raw')
         if st.checkbox('Apply RR artifact correction (Lipponen–Tarvainen / NeuroKit2)'):
             st.caption('One correction pass using NeuroKit2’s Kubios method. This is an independent implementation of the published algorithm, not commercial Kubios software. Raw intervals remain unchanged. The method can insert, remove or reposition inferred beats; exercise-related changes may be misclassified.')
             try:
@@ -90,6 +110,8 @@ try:
                 with st.expander('Correction audit'):
                     st.dataframe(audit_frame, hide_index=True)
                     st.download_button('Download correction audit', audit_frame.to_csv(index=False), 'rr_correction_audit.csv', 'text/csv')
+                st.caption('Correction can change interval counts. Raw and corrected DFA windows are formed independently and should be compared by time, not by window row.')
+                show_dfa(corrected, 'corrected')
             except (ValueError, IndexError, ZeroDivisionError) as error:
                 st.warning(f'Correction unavailable: {error}')
 except (ValueError, KeyError, UnicodeError) as error:

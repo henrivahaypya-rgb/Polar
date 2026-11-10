@@ -1,10 +1,47 @@
 import unittest
-from analysis import parse_exercise, parse_rr, rr_windows, training_metrics, correct_rr
+from analysis import parse_exercise, parse_rr, rr_windows, training_metrics, correct_rr, dfa_windows
 import copy
 import math
 
 
 class AnalysisTests(unittest.TestCase):
+    def test_dfa_window_counts_and_times(self):
+        import numpy as np
+        values = 800 + np.random.default_rng(7).normal(0, 10, 450)
+        beats = parse_rr('duration,offline\n' + '\n'.join(f'{v},false' for v in values))
+        windows = dfa_windows(beats)
+        self.assertEqual([(w['start_interval'], w['end_interval']) for w in windows],
+                         [(1, 200), (101, 300), (201, 400)])
+        self.assertAlmostEqual(windows[0]['start_s'], 0)
+        self.assertAlmostEqual(windows[1]['start_s'], sum(values[:100]) / 1000)
+        self.assertAlmostEqual(windows[0]['end_s'], sum(values[:200]) / 1000)
+        self.assertEqual(len(dfa_windows(beats[:200])), 1)
+        self.assertEqual(dfa_windows(beats[:199]), [])
+        self.assertTrue(all(w['alpha1'] is not None for w in windows))
+
+    def test_dfa_distinguishes_noise_correlations(self):
+        import numpy as np
+        noise = np.random.default_rng(42).normal(0, 1, 3000)
+        estimates = []
+        for values in [800 + noise, 800 + np.cumsum(noise)]:
+            beats = parse_rr('duration,offline\n' + '\n'.join(f'{v},false' for v in values))
+            estimates.append(np.mean([w['alpha1'] for w in dfa_windows(beats)]))
+        self.assertTrue(.4 < estimates[0] < .8)
+        self.assertTrue(1.2 < estimates[1] < 1.8)
+
+    def test_dfa_withholds_without_deleting_intervals(self):
+        beats = parse_rr('duration,offline\n' + '\n'.join(f'{800 + 5*math.sin(i)},false' for i in range(200)))
+        beats[20]['flagged'] = True
+        self.assertIsNone(dfa_windows(beats)[0]['alpha1'])
+        beats[20]['flagged'] = False
+        for b in beats[:11]:
+            b['corrected'] = True
+        self.assertIsNone(dfa_windows(beats)[0]['alpha1'])
+        beats[10]['corrected'] = False
+        self.assertIsNotNone(dfa_windows(beats)[0]['alpha1'])
+        constant = parse_rr('duration,offline\n' + '800,false\n' * 200)
+        self.assertIsNone(dfa_windows(constant)[0]['alpha1'])
+
     def test_correction_repairs_missed_beat_and_preserves_raw(self):
         values = [800 + 20 * math.sin(i * .3) for i in range(1000)]
         values[200] = 1600

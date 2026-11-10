@@ -49,3 +49,11 @@ git pull
 .\.venv312\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv312\Scripts\python.exe -m streamlit run app.py
 ```
+
+## Short-term DFA α1
+
+The RR view calculates DFA α1 for **200 consecutive RR intervals with a 100-interval step**: intervals 1–200, 101–300, 201–400, etc. Only complete windows are used. Each result includes start/end interval numbers (one-based, inclusive), elapsed start/end seconds, midpoint time, mean HR, quality percentages, α1, log–log fit R² and status. A recording with N intervals produces `max(0, (N - 200) // 100 + 1)` windows.
+
+The estimator is NeuroKit2 `fractal_dfa`, with **all integer scales 4–16 inclusive**, a demeaned cumulative profile, first-order (linear) detrending, and 50% overlapping internal segments (`overlap=True`). The slope of log fluctuation versus log scale is α1. Internal DFA segmentation is separate from the 100-interval step of the outer windows. No resampling to uniform time is performed.
+
+Raw and corrected series have separate charts, tables and CSV downloads. Windows are indexed independently when correction adds/removes intervals; compare by elapsed time, not row number. Any residual heuristic flags, more than 5% corrected intervals, constant data or an undefined fit withhold the estimate. Flagged intervals are not deleted or concatenated across gaps. Fit R² describes linear scaling fit only; it is not a validated quality score. Genuine exercise transitions and correction can affect α1. This app does not derive aerobic/anaerobic thresholds or recovery scores from it.
