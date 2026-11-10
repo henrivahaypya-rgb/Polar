@@ -4,7 +4,7 @@ A local Streamlit dashboard for Polar Flow exercise and RR CSV exports. It displ
 
 ## Run
 
-Requires Python 3.12 or later. From the repository directory:
+Tested with Python 3.12 (recommended). From the repository directory:
 
 ```sh
 python -m venv .venv
@@ -29,3 +29,23 @@ RR timing assumes a common start and uses cumulative intervals. Matching duratio
 ```
 
 This first version supports one exercise at a time. Daily activity, multi-session trends, sleep analysis, persistent storage and Polar AccessLink OAuth ingestion are not implemented yet. No credentials are needed for CSV analysis.
+
+## Optional RR artifact correction
+
+After uploading both files, enable **Apply RR artifact correction**. The app uses NeuroKit2 0.2.12 `signal_fixpeaks(method="Kubios", iterative=False)` for one auditable pass of the published Lipponen–Tarvainen algorithm. This is an independent open-source implementation, not a connection to commercial Kubios software or a guarantee of identical results.
+
+The input is a zero-time boundary followed by cumulative RR durations in milliseconds, interpreted as inferred peak positions at a nominal 1,000 Hz time resolution. There is no ECG waveform or verified beat detection. The algorithm classifies ectopic, missed, extra and long/short events and can reposition, insert or delete inferred peaks. Original intervals remain unchanged. Corrected intervals retain their reconstructed elapsed times; recording boundaries must remain unchanged or the correction is rejected. Short recordings (under 30 intervals) and offline-flagged recordings are rejected rather than silently interpolated.
+
+Downloads include raw intervals, corrected intervals, five-minute metric comparisons, and an audit of detected events referencing zero-based original peak indices (index zero is the inferred start boundary). Output intervals are marked corrected when their endpoint pair is absent from the original series; this accounts for inserted/deleted beats without pretending rows align one-to-one. The percentage is an output-interval burden, not a percentage of diagnosed abnormal heartbeats. Corrected RMSSD excludes residual heuristic flags and is withheld for windows with more than 5% corrected output intervals, as well as the existing quality/coverage checks.
+
+Review correction visually: genuine exercise transitions may be classified as artifacts. Corrected exercise HRV remains descriptive and is not an overnight recovery measurement.
+
+References: [NeuroKit signal_fixpeaks documentation](https://neuropsychology.github.io/NeuroKit/functions/signal.html#signal-fixpeaks); Lipponen & Tarvainen (2019), *A robust algorithm for heart rate variability time series artefact correction using novel beat classification*, [DOI](https://doi.org/10.1080/03091902.2019.1640306).
+
+On Windows using the Python 3.12 environment from troubleshooting, update and launch with:
+
+```powershell
+git pull
+.\.venv312\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv312\Scripts\python.exe -m streamlit run app.py
+```

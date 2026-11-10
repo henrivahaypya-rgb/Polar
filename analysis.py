@@ -107,13 +107,51 @@ def rr_windows(beats, window_s=300):
         span = group[-1]['elapsed_s'] - group[0]['elapsed_s']
         coverage = span / window_s
         flagged = sum(b['flagged'] for b in group) / len(group)
-        eligible = coverage >= .9 and flagged <= .05 and len(diffs) >= 30
+        corrected = sum(b.get('corrected', False) for b in group) / len(group)
+        eligible = coverage >= .9 and flagged <= .05 and corrected <= .05 and len(diffs) >= 30
         result.append({'start_min': index * window_s / 60,
                        'coverage_pct': coverage * 100, 'flagged_pct': flagged * 100,
+                       'corrected_pct': corrected * 100,
                        'mean_hr_bpm': 60000 / statistics.mean(clean) if clean else None,
                        'rmssd_ms': math.sqrt(statistics.mean(d*d for d in diffs)) if eligible else None,
                        'status': 'descriptive only' if eligible else 'insufficient coverage or quality'})
     return result
+
+
+def correct_rr(beats):
+    """One pass of NeuroKit's Lipponen–Tarvainen method on inferred beat times.
+
+    Original peak indices are retained in the audit; split/deleted intervals mean
+    corrected rows cannot be paired one-to-one with original rows.
+    """
+    import numpy as np
+    import neurokit2 as nk
+
+    if len(beats) < 30:
+        raise ValueError('Correction requires at least 30 RR intervals.')
+    if any('offline flag' in b['reason'] for b in beats):
+        raise ValueError('Correction is unavailable for offline-flagged data; continuity is uncertain.')
+    original = np.concatenate(([0.0], np.cumsum([b['rr_ms'] for b in beats])))
+    info, peaks = nk.signal_fixpeaks(original, sampling_rate=1000,
+                                     method='Kubios', iterative=False, show=False)
+    peaks = np.asarray(peaks, dtype=float)
+    if (len(peaks) < 2 or not np.isfinite(peaks).all() or
+            np.any(np.diff(peaks) <= 0) or peaks[0] != original[0] or
+            peaks[-1] != original[-1]):
+        raise ValueError('Correction changed recording boundaries or produced invalid intervals; raw data retained.')
+    intervals = np.diff(peaks)
+    corrected = parse_rr('duration,offline\n' + '\n'.join(f'{v:.12g},false' for v in intervals))
+    original_intervals = {(float(a), float(b)) for a, b in zip(original, original[1:])}
+    for row, start, end in zip(corrected, peaks, peaks[1:]):
+        row['elapsed_s'] = float(end / 1000)
+        row['corrected'] = (float(start), float(end)) not in original_intervals
+    audit = []
+    for kind in ('ectopic', 'missed', 'extra', 'longshort'):
+        for index in info.get(kind, []):
+            index = int(index)
+            audit.append({'category': kind, 'original_peak_index': index,
+                          'elapsed_s': float(original[index] / 1000)})
+    return corrected, audit
 
 
 def training_metrics(exercise, resting_hr=44, maximum_hr=168):
