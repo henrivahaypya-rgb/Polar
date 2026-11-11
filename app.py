@@ -1,7 +1,29 @@
 import pandas as pd
 import streamlit as st
 
-from analysis import parse_exercise, parse_rr, rr_windows, training_metrics, number, correct_rr, dfa_windows
+from analysis import parse_exercise, parse_rr, rr_windows, training_metrics, number, correct_rr, dfa_windows, hrv_200_windows
+
+
+@st.cache_data(show_spinner='Calculating 200-interval HRV…', max_entries=4)
+def cached_hrv(beats):
+    return hrv_200_windows(beats)
+
+
+def show_hrv(beats, label):
+    st.subheader(f'200-interval HRV — {label}')
+    rows = cached_hrv(beats)
+    if not rows:
+        st.info('At least 200 RR intervals are required; incomplete final windows are omitted.')
+        return
+    results = pd.DataFrame(rows)
+    st.caption('Same 200-interval windows and 100-interval step as DFA. RMSSD in ms; LF (0.04–0.15 Hz) and HF (0.15–1.0 Hz) in ms². Spectrum: 4 Hz linear interpolation, linear detrending, full-window Hann periodogram. Any flagged beat or more than 5% correction withholds all estimates. LF requires 75 seconds; short-window LF remains exploratory. Full HF is withheld below a mean heart rate of 120 bpm because interpolation cannot restore beat-sampling bandwidth.')
+    st.line_chart(results.set_index('midpoint_min')[['rmssd_ms']])
+    st.line_chart(results.set_index('midpoint_min')[['lf_ms2', 'hf_ms2']])
+    st.warning('Respiration is an experimental estimate from the dominant RR oscillation (RSA), not a measured breathing rate. Motion, nonstationary effort, harmonics and aliasing can produce misleading peaks. Slow breathing below 9 breaths/min is outside the search band. Absence of an estimate does not mean absence of breathing.')
+    st.caption('Search: 0.15 Hz to the lesser of 1 Hz and half the mean beat rate. Only interior peaks with ≥50% of search-band power within ±0.03 Hz and ≥30 seconds of coverage are reported. These are heuristic screening rules, not validated confidence limits.')
+    st.line_chart(results.set_index('midpoint_min')[['respiration_candidate_bpm']])
+    st.dataframe(results, hide_index=True)
+    st.download_button(f'Download {label} 200-interval HRV', results.to_csv(index=False), f'hrv_200_{label}.csv', 'text/csv')
 
 
 @st.cache_data(show_spinner='Correcting RR artifacts…', max_entries=4)
@@ -100,6 +122,7 @@ try:
             st.dataframe(frame[frame['flagged']], hide_index=True)
         st.caption('DFA α1 describes short-term RR correlations. Artifact correction, breathing and exercise transitions affect it; this app does not infer training thresholds from α1.')
         show_dfa(beats, 'raw')
+        show_hrv(beats, 'raw')
         if st.checkbox('Apply RR artifact correction (Lipponen–Tarvainen / NeuroKit2)'):
             st.caption('One correction pass using NeuroKit2’s Kubios method. This is an independent implementation of the published algorithm, not commercial Kubios software. Raw intervals remain unchanged. The method can insert, remove or reposition inferred beats; exercise-related changes may be misclassified.')
             try:
@@ -126,6 +149,7 @@ try:
                     st.download_button('Download correction audit', audit_frame.to_csv(index=False), 'rr_correction_audit.csv', 'text/csv')
                 st.caption('Correction can change interval counts. Raw and corrected DFA windows are formed independently and should be compared by time, not by window row.')
                 show_dfa(corrected, 'corrected')
+                show_hrv(corrected, 'corrected')
             except (ValueError, IndexError, ZeroDivisionError) as error:
                 st.warning(f'Correction unavailable: {error}')
 except (ValueError, KeyError, UnicodeError) as error:

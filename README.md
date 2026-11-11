@@ -1,5 +1,13 @@
 # Polar training analysis
 
+### HRV in 200-interval windows
+
+Alongside DFA, the dashboard reports RMSSD (ms), absolute LF power (0.04–0.15 Hz, ms²), and absolute HF power (0.15–1.0 Hz, ms²). Complete 200-interval windows advance by 100 intervals. Raw and corrected streams are windowed independently. Any remaining flags or more than 5% corrected output intervals withhold the estimates; no beats are deleted to bridge gaps.
+
+Spectra use RR values at interval-end times, linear interpolation to 4 Hz, linear detrending and a full-window Hann periodogram with density scaling. Band integration includes interpolated band edges. LF requires at least 75 seconds of spectral coverage (three cycles at 0.04 Hz); this short-window measure remains exploratory, not equivalent to standard five-minute resting HRV. Full HF is withheld when half the mean beat rate is below 1 Hz. Upsampling does not overcome original beat-sampling limitations.
+
+An experimental respiration candidate is the strongest interior spectral peak between 0.15 Hz and the lesser of 1 Hz and half the mean beat rate, multiplied by 60. It requires 30 seconds of coverage and at least 50% of band power within ±0.03 Hz of the peak. Those heuristic criteria do not establish physiological validity. Respiration outside the searched band, weak RSA, motion, effort transitions, harmonics and aliasing can cause missing or incorrect estimates. This is an RR-derived oscillation estimate, not measured respiration or a validated clinical respiratory rate. Tables and CSV exports include withholding reasons and spectral ceilings.
+
 A local Streamlit dashboard for Polar Flow exercise and RR CSV exports. It displays exercise timelines, heart-rate zones, Edwards training load, RR screening flags and descriptive five-minute RMSSD windows. Original files are not written to disk by the application. Treat uploaded health data as private; do not commit exports or expose the app publicly without authentication.
 
 ## Run

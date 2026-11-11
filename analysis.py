@@ -165,6 +165,83 @@ def dfa_windows(beats):
     return rows
 
 
+def hrv_200_windows(beats):
+    """200-beat, 100-beat-step HRV. PSD units ms²/Hz; band integrals ms².
+
+    Spectral estimates use linear interpolation at 4 Hz, linear detrending and
+    a full-window Hann periodogram. No gaps or flagged beats are interpolated.
+    Respiration is only an unvalidated RSA spectral-peak candidate.
+    """
+    import numpy as np
+    from scipy.signal import detrend, periodogram, find_peaks
+
+    rows = []
+    for start in range(0, len(beats) - 199, 100):
+        group = beats[start:start + 200]
+        rr = np.array([b['rr_ms'] for b in group], dtype=float)
+        times = np.array([b['elapsed_s'] for b in group], dtype=float)
+        begin = times[0] - rr[0] / 1000
+        row = dict(start_interval=start + 1, end_interval=start + 200,
+                   midpoint_min=(begin + times[-1]) / 120,
+                   duration_s=times[-1] - begin,
+                   flagged_pct=sum(b['flagged'] for b in group) / 2,
+                   corrected_pct=sum(b.get('corrected', False) for b in group) / 2,
+                   rmssd_ms=None, lf_ms2=None, hf_ms2=None,
+                   spectral_ceiling_hz=None, respiration_candidate_bpm=None,
+                   respiration_peak_fraction=None, status='ok',
+                   respiration_status='unavailable')
+        rows.append(row)
+        if row['flagged_pct'] or row['corrected_pct'] > 5:
+            row['status'] = 'withheld: flagged intervals or more than 5% corrected'
+            continue
+        if (not np.isfinite(rr).all() or np.any(rr <= 0) or
+                not np.isfinite(times).all() or np.any(np.diff(times) <= 0) or
+                not np.allclose(np.diff(times), rr[1:] / 1000, atol=1e-5)):
+            row['status'] = 'withheld: invalid or discontinuous timing'
+            continue
+        row['rmssd_ms'] = float(np.sqrt(np.mean(np.diff(rr) ** 2)))
+        # Interpolation does not create independent high-frequency information.
+        ceiling = min(1., 500 / float(np.mean(rr)))
+        row['spectral_ceiling_hz'] = ceiling
+        grid = np.arange(times[0], times[-1], .25)
+        signal = detrend(np.interp(grid, times, rr), type='linear')
+        freq, psd = periodogram(signal, fs=4., window='hann', detrend=False,
+                                scaling='density')
+
+        def power(low, high):
+            inside = (freq > low) & (freq < high)
+            f = np.r_[low, freq[inside], high]
+            p = np.interp(f, freq, psd)
+            return float(np.trapezoid(p, f))
+
+        duration = times[-1] - times[0]
+        if duration >= 75:  # at least three cycles at the LF lower bound
+            row['lf_ms2'] = power(.04, .15)
+        else:
+            row['status'] = 'LF withheld: less than 75 seconds of spectral coverage'
+        if ceiling >= 1.:
+            row['hf_ms2'] = power(.15, 1.)
+        else:
+            row['status'] += '; full HF withheld: mean beat rate cannot support 1 Hz'
+        band = (freq >= .15) & (freq <= ceiling)
+        candidates, _ = find_peaks(psd)
+        candidates = [i for i in candidates if band[i] and
+                      freq[i] > .15 + 1/duration and freq[i] < ceiling - 1/duration]
+        if np.ptp(rr) < 1e-6 or not candidates:
+            row['respiration_status'] = 'withheld: no interior spectral peak'
+            continue
+        peak = max(candidates, key=lambda i: psd[i])
+        total = power(.15, ceiling) if ceiling > .15 else 0
+        fraction = power(max(.15, freq[peak] - .03), min(ceiling, freq[peak] + .03)) / total if total > 1e-12 else 0
+        row['respiration_peak_fraction'] = fraction
+        if duration < 30 or fraction < .5:
+            row['respiration_status'] = 'withheld: short window or weak spectral concentration'
+        else:
+            row['respiration_candidate_bpm'] = float(freq[peak] * 60)
+            row['respiration_status'] = 'unvalidated RSA peak candidate; aliasing and exercise confounding possible'
+    return rows
+
+
 def correct_rr(beats):
     """One pass of NeuroKit's Lipponen–Tarvainen method on inferred beat times.
 
