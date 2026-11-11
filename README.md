@@ -38,9 +38,9 @@ RR timing assumes a common start and uses cumulative intervals. Matching duratio
 
 This first version supports one exercise at a time. Daily activity, multi-session trends, sleep analysis, persistent storage and Polar AccessLink OAuth ingestion are not implemented yet. No credentials are needed for CSV analysis.
 
-## Optional RR artifact correction
+## Automatic RR artifact correction
 
-After uploading an RR file (with or without an exercise file), enable **Apply RR artifact correction**. The app uses NeuroKit2 0.2.12 `signal_fixpeaks(method="Kubios", iterative=False)` for one auditable pass of the published Lipponen–Tarvainen algorithm. This is an independent open-source implementation, not a connection to commercial Kubios software or a guarantee of identical results.
+After uploading an RR file (with or without an exercise file), artifact correction runs automatically. Corrected DFA and 200-interval HRV are calculated without an extra checkbox; raw metrics remain available for comparison. If correction is unavailable, the app explains why and retains raw results. The app uses NeuroKit2 0.2.12 `signal_fixpeaks(method="Kubios", iterative=False)` for one auditable pass of the published Lipponen–Tarvainen algorithm. This is an independent open-source implementation, not a connection to commercial Kubios software or a guarantee of identical results.
 
 The input is a zero-time boundary followed by cumulative RR durations in milliseconds, interpreted as inferred peak positions at a nominal 1,000 Hz time resolution. There is no ECG waveform or verified beat detection. The algorithm classifies ectopic, missed, extra and long/short events and can reposition, insert or delete inferred peaks. Original intervals remain unchanged. Corrected intervals retain their reconstructed elapsed times; recording boundaries must remain unchanged or the correction is rejected. Short recordings (under 30 intervals) and offline-flagged recordings are rejected rather than silently interpolated.
 

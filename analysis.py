@@ -187,6 +187,7 @@ def hrv_200_windows(beats):
                    flagged_pct=sum(b['flagged'] for b in group) / 2,
                    corrected_pct=sum(b.get('corrected', False) for b in group) / 2,
                    rmssd_ms=None, lf_ms2=None, hf_ms2=None,
+                   resampling_hz=4.0,
                    spectral_ceiling_hz=None, respiration_candidate_bpm=None,
                    respiration_peak_fraction=None, status='ok',
                    respiration_status='unavailable')
@@ -203,9 +204,10 @@ def hrv_200_windows(beats):
         # Interpolation does not create independent high-frequency information.
         ceiling = min(1., 500 / float(np.mean(rr)))
         row['spectral_ceiling_hz'] = ceiling
-        grid = np.arange(times[0], times[-1], .25)
+        resampling_hz = row['resampling_hz']
+        grid = np.arange(times[0], times[-1], 1 / resampling_hz)
         signal = detrend(np.interp(grid, times, rr), type='linear')
-        freq, psd = periodogram(signal, fs=4., window='hann', detrend=False,
+        freq, psd = periodogram(signal, fs=resampling_hz, window='hann', detrend=False,
                                 scaling='density')
 
         def power(low, high):

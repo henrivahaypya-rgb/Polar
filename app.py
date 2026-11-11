@@ -123,34 +123,34 @@ try:
         st.caption('DFA α1 describes short-term RR correlations. Artifact correction, breathing and exercise transitions affect it; this app does not infer training thresholds from α1.')
         show_dfa(beats, 'raw')
         show_hrv(beats, 'raw')
-        if st.checkbox('Apply RR artifact correction (Lipponen–Tarvainen / NeuroKit2)'):
-            st.caption('One correction pass using NeuroKit2’s Kubios method. This is an independent implementation of the published algorithm, not commercial Kubios software. Raw intervals remain unchanged. The method can insert, remove or reposition inferred beats; exercise-related changes may be misclassified.')
-            try:
-                corrected, audit = cached_correction(beats)
-                changed = sum(b['corrected'] for b in corrected)
-                st.metric('Corrected output intervals', f'{changed} / {len(corrected)}')
-                st.caption('An output interval is marked corrected if either endpoint differs from the original interval. The audit lists detections from the single pass, not confirmed physiological abnormalities.')
-                raw_plot = frame[['Minutes', 'rr_ms']].rename(columns={'rr_ms': 'Raw RR (ms)'})
-                corrected_frame = pd.DataFrame(corrected)
-                corrected_frame['Minutes'] = corrected_frame['elapsed_s'] / 60
-                corrected_plot = corrected_frame[['Minutes', 'rr_ms']].rename(columns={'rr_ms': 'Corrected RR (ms)'})
-                st.line_chart(pd.merge(raw_plot, corrected_plot, on='Minutes', how='outer').sort_values('Minutes').set_index('Minutes'))
-                comparison = pd.DataFrame(rr_windows(beats)).merge(
-                    pd.DataFrame(rr_windows(corrected)), on='start_min', suffixes=('_raw', '_corrected'))
-                st.subheader('Raw versus corrected five-minute metrics')
-                st.caption('Raw metrics exclude heuristic flags. Corrected metrics exclude remaining flags and are withheld when more than 5% of output intervals in a window were corrected. Correction does not establish stable effort or make exercise HRV a recovery score.')
-                st.dataframe(comparison, hide_index=True)
-                st.download_button('Download corrected RR intervals', corrected_frame.to_csv(index=False), 'rr_corrected.csv', 'text/csv')
-                st.download_button('Download raw RR intervals', frame.to_csv(index=False), 'rr_raw.csv', 'text/csv')
-                st.download_button('Download raw/corrected window comparison', comparison.to_csv(index=False), 'rr_comparison.csv', 'text/csv')
-                audit_frame = pd.DataFrame(audit, columns=['category', 'original_peak_index', 'elapsed_s'])
-                with st.expander('Correction audit'):
-                    st.dataframe(audit_frame, hide_index=True)
-                    st.download_button('Download correction audit', audit_frame.to_csv(index=False), 'rr_correction_audit.csv', 'text/csv')
-                st.caption('Correction can change interval counts. Raw and corrected DFA windows are formed independently and should be compared by time, not by window row.')
-                show_dfa(corrected, 'corrected')
-                show_hrv(corrected, 'corrected')
-            except (ValueError, IndexError, ZeroDivisionError) as error:
-                st.warning(f'Correction unavailable: {error}')
+        st.subheader('Automatic RR artifact correction')
+        st.caption('One correction pass using NeuroKit2’s Kubios method. This is an independent implementation of the published algorithm, not commercial Kubios software. Raw intervals remain unchanged. The method can insert, remove or reposition inferred beats; exercise-related changes may be misclassified.')
+        try:
+            corrected, audit = cached_correction(beats)
+            changed = sum(b['corrected'] for b in corrected)
+            st.metric('Corrected output intervals', f'{changed} / {len(corrected)}')
+            st.caption('An output interval is marked corrected if either endpoint differs from the original interval. The audit lists detections from the single pass, not confirmed physiological abnormalities.')
+            raw_plot = frame[['Minutes', 'rr_ms']].rename(columns={'rr_ms': 'Raw RR (ms)'})
+            corrected_frame = pd.DataFrame(corrected)
+            corrected_frame['Minutes'] = corrected_frame['elapsed_s'] / 60
+            corrected_plot = corrected_frame[['Minutes', 'rr_ms']].rename(columns={'rr_ms': 'Corrected RR (ms)'})
+            st.line_chart(pd.merge(raw_plot, corrected_plot, on='Minutes', how='outer').sort_values('Minutes').set_index('Minutes'))
+            comparison = pd.DataFrame(rr_windows(beats)).merge(
+                pd.DataFrame(rr_windows(corrected)), on='start_min', suffixes=('_raw', '_corrected'))
+            st.subheader('Raw versus corrected five-minute metrics')
+            st.caption('Raw metrics exclude heuristic flags. Corrected metrics exclude remaining flags and are withheld when more than 5% of output intervals in a window were corrected. Correction does not establish stable effort or make exercise HRV a recovery score.')
+            st.dataframe(comparison, hide_index=True)
+            st.download_button('Download corrected RR intervals', corrected_frame.to_csv(index=False), 'rr_corrected.csv', 'text/csv')
+            st.download_button('Download raw RR intervals', frame.to_csv(index=False), 'rr_raw.csv', 'text/csv')
+            st.download_button('Download raw/corrected window comparison', comparison.to_csv(index=False), 'rr_comparison.csv', 'text/csv')
+            audit_frame = pd.DataFrame(audit, columns=['category', 'original_peak_index', 'elapsed_s'])
+            with st.expander('Correction audit'):
+                st.dataframe(audit_frame, hide_index=True)
+                st.download_button('Download correction audit', audit_frame.to_csv(index=False), 'rr_correction_audit.csv', 'text/csv')
+            st.caption('Correction can change interval counts. Raw and corrected DFA windows are formed independently and should be compared by time, not by window row.')
+            show_dfa(corrected, 'corrected')
+            show_hrv(corrected, 'corrected')
+        except (ValueError, IndexError, ZeroDivisionError) as error:
+            st.warning(f'Correction unavailable: {error}')
 except (ValueError, KeyError, UnicodeError) as error:
     st.error(f'Cannot analyze these files: {error}')

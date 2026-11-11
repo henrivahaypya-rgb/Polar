@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 import numpy as np
 from analysis import hrv_200_windows
 
@@ -13,9 +14,19 @@ def beats(frequency=.3, baseline=400, amplitude=10, count=200):
 
 
 class HRVTests(unittest.TestCase):
+    def test_spectrum_uses_four_hz_resampling(self):
+        from scipy.signal import periodogram
+        group = beats()
+        with patch('scipy.signal.periodogram', wraps=periodogram) as spectrum:
+            hrv_200_windows(group)
+        self.assertEqual(spectrum.call_args.kwargs['fs'], 4.0)
+        expected = len(np.arange(group[0]['elapsed_s'], group[-1]['elapsed_s'], .25))
+        self.assertEqual(len(spectrum.call_args.args[0]), expected)
+
     def test_hf_power_and_respiration(self):
         group = beats()
         row = hrv_200_windows(group)[0]
+        self.assertEqual(row['resampling_hz'], 4.0)
         expected = np.sqrt(np.mean(np.diff([b['rr_ms'] for b in group]) ** 2))
         self.assertAlmostEqual(row['rmssd_ms'], expected)
         self.assertGreater(row['hf_ms2'], 35)

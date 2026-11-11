@@ -25,6 +25,10 @@ class DashboardTests(unittest.TestCase):
 
     def test_rr_only_and_scatter_axes(self):
         app = self.run_uploads(None, rr_file())
+        headings = [s.value for s in app.subheader]
+        self.assertIn('200-interval HRV — corrected', headings)
+        self.assertIn('DFA α1 — corrected', headings)
+        self.assertFalse(app.checkbox)
         self.assertNotIn('Edwards load (AU)', [m.label for m in app.metric])
         self.assertIn('RR recording duration (min)', [m.label for m in app.metric])
         charts = app.get('arrow_vega_lite_chart')
