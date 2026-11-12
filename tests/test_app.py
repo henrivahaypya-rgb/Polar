@@ -26,7 +26,7 @@ class DashboardTests(unittest.TestCase):
     def test_rr_only_and_scatter_axes(self):
         app = self.run_uploads(None, rr_file())
         headings = [s.value for s in app.subheader]
-        self.assertIn('200-interval HRV — corrected', headings)
+        self.assertIn('120-second HRV — corrected', headings)
         self.assertIn('DFA α1 — corrected', headings)
         self.assertFalse(app.checkbox)
         self.assertNotIn('Edwards load (AU)', [m.label for m in app.metric])
@@ -52,7 +52,7 @@ class DashboardTests(unittest.TestCase):
 
     def test_short_rr(self):
         app = self.run_uploads(None, rr_file(30))
-        self.assertTrue(any('at least 200' in m.value for m in app.info))
+        self.assertTrue(any('at least 120' in m.value for m in app.info))
 
     def test_invalid_rr(self):
         with patch('streamlit.file_uploader', side_effect=[None, io.BytesIO(b'bad,data\n')]):

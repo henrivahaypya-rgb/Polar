@@ -10,13 +10,13 @@ class AnalysisTests(unittest.TestCase):
         values = 800 + np.random.default_rng(7).normal(0, 10, 450)
         beats = parse_rr('duration,offline\n' + '\n'.join(f'{v},false' for v in values))
         windows = dfa_windows(beats)
-        self.assertEqual([(w['start_interval'], w['end_interval']) for w in windows],
-                         [(1, 200), (101, 300), (201, 400)])
-        self.assertAlmostEqual(windows[0]['start_s'], 0)
-        self.assertAlmostEqual(windows[1]['start_s'], sum(values[:100]) / 1000)
-        self.assertAlmostEqual(windows[0]['end_s'], sum(values[:200]) / 1000)
+        self.assertEqual([(w['start_s'], w['end_s']) for w in windows],
+                         [(0, 120), (60, 180), (120, 240), (180, 300)])
+        for row in windows:
+            selected = [b for b in beats if row['start_s'] < b['elapsed_s'] <= row['end_s']]
+            self.assertEqual(row['interval_count'], len(selected))
         self.assertEqual(len(dfa_windows(beats[:200])), 1)
-        self.assertEqual(dfa_windows(beats[:199]), [])
+        self.assertEqual(dfa_windows(beats[:100]), [])
         self.assertTrue(all(w['alpha1'] is not None for w in windows))
 
     def test_dfa_distinguishes_noise_correlations(self):
@@ -34,10 +34,10 @@ class AnalysisTests(unittest.TestCase):
         beats[20]['flagged'] = True
         self.assertIsNone(dfa_windows(beats)[0]['alpha1'])
         beats[20]['flagged'] = False
-        for b in beats[:11]:
+        for b in beats[:8]:
             b['corrected'] = True
         self.assertIsNone(dfa_windows(beats)[0]['alpha1'])
-        beats[10]['corrected'] = False
+        beats[7]['corrected'] = False
         self.assertIsNotNone(dfa_windows(beats)[0]['alpha1'])
         constant = parse_rr('duration,offline\n' + '800,false\n' * 200)
         self.assertIsNone(dfa_windows(constant)[0]['alpha1'])
@@ -88,13 +88,12 @@ class AnalysisTests(unittest.TestCase):
                 parse_rr(f'duration,offline\n{value},false\n')
 
     def test_short_window_withholds_rmssd(self):
-        self.assertIsNone(rr_windows(parse_rr('duration,offline\n500,false\n510,false\n'))[0]['rmssd_ms'])
+        self.assertEqual(rr_windows(parse_rr('duration,offline\n500,false\n510,false\n')), [])
 
     def test_rmssd_does_not_bridge_artifacts(self):
-        beats = [{'elapsed_s': i, 'rr_ms': 500 if i % 2 else 510, 'flagged': False} for i in range(1, 300)]
-        beats[100]['rr_ms'] = 2000
+        beats = parse_rr('duration,offline\n' + '500,false\n510,false\n' * 150)
         beats[100]['flagged'] = True
-        self.assertAlmostEqual(rr_windows(beats)[0]['rmssd_ms'], 10)
+        self.assertIsNone(rr_windows(beats)[0]['rmssd_ms'])
 
     def test_load_and_missing_seconds(self):
         data = 'Sport,Duration\nRUNNING,00:00:10\nTime,HR (bpm)\n00:00:00,100\n00:00:01,120\n00:00:09,200\n'

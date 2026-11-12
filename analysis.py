@@ -94,32 +94,42 @@ def parse_rr(data):
     return beats
 
 
-def rr_windows(beats, window_s=300):
-    """Descriptive exercise HRV; never join pairs across flagged beats or windows."""
-    groups = {}
-    for beat in beats:
-        groups.setdefault(int(beat['elapsed_s'] // window_s), []).append(beat)
-    result = []
-    for index, group in sorted(groups.items()):
-        clean = [b['rr_ms'] for b in group if not b['flagged']]
-        diffs = [b['rr_ms'] - a['rr_ms'] for a, b in zip(group, group[1:])
-                 if not a['flagged'] and not b['flagged']]
-        span = group[-1]['elapsed_s'] - group[0]['elapsed_s']
-        coverage = span / window_s
-        flagged = sum(b['flagged'] for b in group) / len(group)
-        corrected = sum(b.get('corrected', False) for b in group) / len(group)
-        eligible = coverage >= .9 and flagged <= .05 and corrected <= .05 and len(diffs) >= 30
-        result.append({'start_min': index * window_s / 60,
-                       'coverage_pct': coverage * 100, 'flagged_pct': flagged * 100,
-                       'corrected_pct': corrected * 100,
-                       'mean_hr_bpm': 60000 / statistics.mean(clean) if clean else None,
-                       'rmssd_ms': math.sqrt(statistics.mean(d*d for d in diffs)) if eligible else None,
-                       'status': 'descriptive only' if eligible else 'insufficient coverage or quality'})
-    return result
+def time_windows(beats):
+    """Shared complete 120 s windows, every 60 s, anchored at recording start.
+
+    Assign intervals by end timestamp in (start, end]. Boundary intervals are
+    not split. Nominal time bounds remain identical for raw/corrected streams.
+    """
+    from bisect import bisect_right
+    if not beats:
+        return
+    times = [b['elapsed_s'] for b in beats]
+    origin = times[0] - beats[0]['rr_ms'] / 1000
+    count = max(0, int(math.floor((times[-1] - origin - 120 + 1e-7) / 60)) + 1)
+    for index in range(count):
+        start = origin + index * 60
+        end = start + 120
+        left = bisect_right(times, start + 1e-7)
+        right = bisect_right(times, end + 1e-7)
+        group = beats[left:right]
+        if not group:
+            continue
+        n = len(group)
+        yield group, dict(start_interval=left + 1, end_interval=right,
+                          start_s=start, end_s=end, start_min=start / 60,
+                          midpoint_min=(start + end) / 120, duration_s=120.,
+                          interval_count=n,
+                          flagged_pct=100 * sum(b['flagged'] for b in group) / n,
+                          corrected_pct=100 * sum(b.get('corrected', False) for b in group) / n)
+
+
+def rr_windows(beats):
+    """Summary view of the same two-minute HRV windows used for spectra."""
+    return hrv_windows(beats)
 
 
 def dfa_windows(beats):
-    """DFA alpha1, scales 4–16, in complete 200-interval windows stepped by 100.
+    """DFA alpha1, scales 4–16, in complete 120-second windows stepped by 60.
 
     Never remove intervals to manufacture a contiguous window. Raw or residual
     flags withhold the estimate; corrected output burden must be <= 5%.
@@ -128,24 +138,19 @@ def dfa_windows(beats):
     import neurokit2 as nk
 
     rows = []
-    for start in range(0, len(beats) - 199, 100):
-        group = beats[start:start + 200]
+    for group, bounds in time_windows(beats):
         values = np.asarray([b['rr_ms'] for b in group], dtype=float)
-        start_s = group[0]['elapsed_s'] - group[0]['rr_ms'] / 1000
-        end_s = group[-1]['elapsed_s']
-        flagged = sum(b['flagged'] for b in group)
-        corrected = sum(b.get('corrected', False) for b in group)
-        row = {'start_interval': start + 1, 'end_interval': start + 200,
-               'start_s': start_s, 'end_s': end_s, 'midpoint_min': (start_s + end_s) / 120,
-               'interval_count': 200, 'flagged_pct': flagged / 2,
-               'corrected_pct': corrected / 2, 'mean_hr_bpm': 60000 / float(np.mean(values)),
+        flagged = any(b['flagged'] for b in group)
+        row = {**bounds, 'mean_hr_bpm': 60000 / float(np.mean(values)),
                'alpha1': None, 'fit_r2': None, 'status': 'ok'}
         if flagged:
             row['status'] = 'withheld: flagged intervals'
-        elif corrected > 10:
+        elif row['corrected_pct'] > 5:
             row['status'] = 'withheld: more than 5% corrected'
         elif not np.isfinite(values).all() or np.any(values <= 0):
             row['status'] = 'withheld: invalid intervals'
+        elif len(values) < 64:
+            row['status'] = 'withheld: fewer than 64 intervals for DFA scales 4–16'
         elif np.ptp(values) < 1e-9:
             row['status'] = 'withheld: constant RR'
         else:
@@ -165,8 +170,8 @@ def dfa_windows(beats):
     return rows
 
 
-def hrv_200_windows(beats):
-    """200-beat, 100-beat-step HRV. PSD units ms²/Hz; band integrals ms².
+def hrv_windows(beats):
+    """120-second, 60-second-step HRV. PSD units ms²/Hz; band integrals ms².
 
     Spectral estimates use linear interpolation at 4 Hz, linear detrending and
     a full-window Hann periodogram. No gaps or flagged beats are interpolated.
@@ -176,16 +181,10 @@ def hrv_200_windows(beats):
     from scipy.signal import detrend, periodogram, find_peaks
 
     rows = []
-    for start in range(0, len(beats) - 199, 100):
-        group = beats[start:start + 200]
+    for group, bounds in time_windows(beats):
         rr = np.array([b['rr_ms'] for b in group], dtype=float)
         times = np.array([b['elapsed_s'] for b in group], dtype=float)
-        begin = times[0] - rr[0] / 1000
-        row = dict(start_interval=start + 1, end_interval=start + 200,
-                   midpoint_min=(begin + times[-1]) / 120,
-                   duration_s=times[-1] - begin,
-                   flagged_pct=sum(b['flagged'] for b in group) / 2,
-                   corrected_pct=sum(b.get('corrected', False) for b in group) / 2,
+        row = dict(**bounds, mean_hr_bpm=60000 / float(np.mean(rr)),
                    rmssd_ms=None, lf_ms2=None, hf_ms2=None,
                    resampling_hz=4.0,
                    spectral_ceiling_hz=None, respiration_candidate_bpm=None,
@@ -195,7 +194,7 @@ def hrv_200_windows(beats):
         if row['flagged_pct'] or row['corrected_pct'] > 5:
             row['status'] = 'withheld: flagged intervals or more than 5% corrected'
             continue
-        if (not np.isfinite(rr).all() or np.any(rr <= 0) or
+        if (len(rr) < 2 or not np.isfinite(rr).all() or np.any(rr <= 0) or
                 not np.isfinite(times).all() or np.any(np.diff(times) <= 0) or
                 not np.allclose(np.diff(times), rr[1:] / 1000, atol=1e-5)):
             row['status'] = 'withheld: invalid or discontinuous timing'
