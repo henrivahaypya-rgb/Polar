@@ -111,7 +111,7 @@ try:
         if difference is not None and abs(difference) > max(10, exercise['duration_s'] * .01):
             st.warning('Durations differ substantially. Confirm that the files belong to the same session. RR data is shown separately without claiming synchronization.')
         st.warning('Exercise HRV is not a resting recovery score. Motion, effort and breathing affect it. Screening flags are heuristics, not verified artifact correction; stable intensity is not automatically established.')
-        st.caption('Flags: intervals outside 250–2,000 ms, changes over 20% from the preceding interval, or offline=true. RMSSD uses adjacent unflagged pairs within each 120-second window, advanced by 60 seconds. Any flagged interval or more than 5% corrected intervals withholds estimates.')
+        st.caption('Flags: intervals outside 250–2,000 ms, changes over 20% from the preceding interval. The offline column is ignored; elapsed time is the cumulative sum of RR durations. RMSSD uses adjacent unflagged pairs within each 120-second window, advanced by 60 seconds. Any flagged interval or more than 5% corrected intervals withholds estimates.')
         frame = pd.DataFrame(beats)
         frame['Minutes'] = frame['elapsed_s'] / 60
         st.line_chart(frame.set_index('Minutes')[['rr_ms']])

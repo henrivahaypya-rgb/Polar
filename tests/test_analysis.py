@@ -66,10 +66,21 @@ class AnalysisTests(unittest.TestCase):
         for raw, output in zip(beats, corrected):
             self.assertAlmostEqual(raw['rr_ms'], output['rr_ms'], places=7)
 
-    def test_correction_refuses_short_or_offline_data(self):
-        for data in ['500,false\n' * 10, '500,true\n' * 40]:
-            with self.assertRaises(ValueError):
-                correct_rr(parse_rr('duration,offline\n' + data))
+    def test_correction_refuses_short_data(self):
+        with self.assertRaises(ValueError):
+            correct_rr(parse_rr('duration\n' + '500\n' * 10))
+
+    def test_offline_metadata_does_not_affect_timing_or_correction(self):
+        values = [800 + 20 * math.sin(i * .3) for i in range(500)]
+        plain = parse_rr('duration\n' + '\n'.join(str(v) for v in values))
+        expected, audit = correct_rr(plain)
+        for flag in ['true', 'false', '', 'unknown']:
+            beats = parse_rr('duration,offline\n' + '\n'.join(f'{v},{flag}' for v in values))
+            self.assertEqual(beats, plain)
+            self.assertAlmostEqual(beats[-1]['elapsed_s'], sum(values) / 1000)
+            corrected, actual_audit = correct_rr(beats)
+            self.assertEqual(corrected, expected)
+            self.assertEqual(actual_audit, audit)
 
     def test_heavily_corrected_window_withholds_hrv(self):
         beats = [{'elapsed_s': i, 'rr_ms': 800, 'flagged': False, 'corrected': i < 40}

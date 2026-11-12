@@ -62,8 +62,8 @@ def parse_exercise(data):
 
 def parse_rr(data):
     rows = read_rows(data)
-    if not rows or not {'duration', 'offline'}.issubset(rows[0]):
-        raise ValueError('Expected an RR CSV with duration and offline columns.')
+    if not rows or 'duration' not in rows[0]:
+        raise ValueError('Expected an RR CSV with a duration column in milliseconds.')
     beats, elapsed = [], 0.0
     previous = None
     for line, row in enumerate(rows[1:], 2):
@@ -75,16 +75,11 @@ def parse_rr(data):
         rr = number(entry['duration'])
         if rr is None or rr <= 0:
             raise ValueError(f'RR row {line} must contain a positive finite interval.')
-        flag = entry['offline'].strip().lower()
-        if flag not in ('true', 'false'):
-            raise ValueError(f'RR row {line} has an unknown offline flag.')
         reasons = []
         if not 250 <= rr <= 2000:
             reasons.append('outside 250–2000 ms')
         if previous is not None and abs(rr - previous) / previous > .20:
             reasons.append('change over 20%')
-        if flag == 'true':
-            reasons.append('offline flag')
         elapsed += rr / 1000
         beats.append({'elapsed_s': elapsed, 'rr_ms': rr, 'flagged': bool(reasons),
                       'reason': '; '.join(reasons)})
@@ -254,8 +249,6 @@ def correct_rr(beats):
 
     if len(beats) < 30:
         raise ValueError('Correction requires at least 30 RR intervals.')
-    if any('offline flag' in b['reason'] for b in beats):
-        raise ValueError('Correction is unavailable for offline-flagged data; continuity is uncertain.')
     original = np.concatenate(([0.0], np.cumsum([b['rr_ms'] for b in beats])))
     info, peaks = nk.signal_fixpeaks(original, sampling_rate=1000,
                                      method='Kubios', iterative=False, show=False)
