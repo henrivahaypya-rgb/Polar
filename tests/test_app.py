@@ -28,6 +28,11 @@ class DashboardTests(unittest.TestCase):
         headings = [s.value for s in app.subheader]
         self.assertIn('120-second HRV — corrected', headings)
         self.assertIn('DFA α1 — corrected', headings)
+        self.assertNotIn('DFA α1 — raw', headings)
+        self.assertNotIn('120-second HRV — raw', headings)
+        labels = [b.label for b in app.get('download_button')]
+        self.assertNotIn('Download RR window metrics', labels)
+        self.assertNotIn('Download raw/corrected window comparison', labels)
         self.assertFalse(app.checkbox)
         self.assertNotIn('Edwards load (AU)', [m.label for m in app.metric])
         self.assertIn('RR recording duration (min)', [m.label for m in app.metric])
@@ -59,3 +64,10 @@ class DashboardTests(unittest.TestCase):
             app = AppTest.from_file('app.py').run(timeout=30)
         self.assertFalse(app.exception)
         self.assertTrue(app.error)
+
+    def test_correction_failure_does_not_analyze_raw(self):
+        with patch('analysis.correct_rr', side_effect=ValueError('test correction failure')):
+            app = self.run_uploads(None, rr_file(count=451))
+        self.assertTrue(any('HRV analysis was not run' in w.value for w in app.warning))
+        headings = [s.value for s in app.subheader]
+        self.assertFalse(any('HRV —' in h or 'DFA α1 —' in h for h in headings))

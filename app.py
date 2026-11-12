@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
 
-from analysis import parse_exercise, parse_rr, rr_windows, training_metrics, number, correct_rr, dfa_windows, hrv_windows
+from analysis import parse_exercise, parse_rr, training_metrics, number, correct_rr, dfa_windows, hrv_windows
 
 
 @st.cache_data(show_spinner='Calculating 120-second HRV…', max_entries=4)
@@ -115,14 +115,9 @@ try:
         frame = pd.DataFrame(beats)
         frame['Minutes'] = frame['elapsed_s'] / 60
         st.line_chart(frame.set_index('Minutes')[['rr_ms']])
-        windows = pd.DataFrame(rr_windows(beats))
-        st.dataframe(windows, hide_index=True)
-        st.download_button('Download RR window metrics', windows.to_csv(index=False), 'rr_windows_120s.csv', 'text/csv')
         with st.expander('Flagged intervals'):
             st.dataframe(frame[frame['flagged']], hide_index=True)
         st.caption('DFA α1 describes short-term RR correlations. Artifact correction, breathing and exercise transitions affect it; this app does not infer training thresholds from α1.')
-        show_dfa(beats, 'raw')
-        show_hrv(beats, 'raw')
         st.subheader('Automatic RR artifact correction')
         st.caption('One correction pass using NeuroKit2’s Kubios method. This is an independent implementation of the published algorithm, not commercial Kubios software. Raw intervals remain unchanged. The method can insert, remove or reposition inferred beats; exercise-related changes may be misclassified.')
         try:
@@ -135,22 +130,16 @@ try:
             corrected_frame['Minutes'] = corrected_frame['elapsed_s'] / 60
             corrected_plot = corrected_frame[['Minutes', 'rr_ms']].rename(columns={'rr_ms': 'Corrected RR (ms)'})
             st.line_chart(pd.merge(raw_plot, corrected_plot, on='Minutes', how='outer').sort_values('Minutes').set_index('Minutes'))
-            comparison = pd.DataFrame(rr_windows(beats), columns=['start_min', 'rmssd_ms', 'status']).merge(
-                pd.DataFrame(rr_windows(corrected), columns=['start_min', 'rmssd_ms', 'status']), on='start_min', suffixes=('_raw', '_corrected'))
-            st.subheader('Raw versus corrected 120-second metrics')
-            st.caption('Raw and corrected metrics are withheld for remaining flags and are withheld when more than 5% of output intervals in a window were corrected. Correction does not establish stable effort or make exercise HRV a recovery score.')
-            st.dataframe(comparison, hide_index=True)
             st.download_button('Download corrected RR intervals', corrected_frame.to_csv(index=False), 'rr_corrected.csv', 'text/csv')
             st.download_button('Download raw RR intervals', frame.to_csv(index=False), 'rr_raw.csv', 'text/csv')
-            st.download_button('Download raw/corrected window comparison', comparison.to_csv(index=False), 'rr_comparison_120s.csv', 'text/csv')
             audit_frame = pd.DataFrame(audit, columns=['category', 'original_peak_index', 'elapsed_s'])
             with st.expander('Correction audit'):
                 st.dataframe(audit_frame, hide_index=True)
                 st.download_button('Download correction audit', audit_frame.to_csv(index=False), 'rr_correction_audit.csv', 'text/csv')
-            st.caption('Correction can change interval counts. Raw and corrected windows share the same 120-second time bounds; interval counts can differ after correction.')
+            st.caption('HRV analysis uses corrected intervals only, in 120-second windows advancing by 60 seconds. Raw intervals are retained only for correction review and download.')
             show_dfa(corrected, 'corrected')
             show_hrv(corrected, 'corrected')
         except (ValueError, IndexError, ZeroDivisionError) as error:
-            st.warning(f'Correction unavailable: {error}')
+            st.warning(f'Correction unavailable; HRV analysis was not run: {error}')
 except (ValueError, KeyError, UnicodeError) as error:
     st.error(f'Cannot analyze these files: {error}')
